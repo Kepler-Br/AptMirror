@@ -1,12 +1,19 @@
 use std::collections::HashMap;
-use chrono::NaiveDateTime;
+
+use chrono::{NaiveDateTime, ParseError};
+use thiserror::Error;
+
 use crate::parsers::in_release::in_release_builder::InReleaseBuilder;
 use crate::parsers::in_release::in_release_states::{ParserState, State};
 
+#[derive(Error, Debug)]
 pub enum HeaderStateError {
-    HeaderMatchingError(String),
-    DateParsingError(String),
-    UnexpectedHeaderSplitCount(String),
+    #[error("Unknown header key: {0}")]
+    UnknownHeaderKey(String),
+    #[error("Unable to parse date: {0}")]
+    DateParsingError(#[source] ParseError, String),
+    #[error("Unexpected header format: {0}")]
+    UnexpectedHeaderFormat(String),
 }
 
 pub struct HeaderState {
@@ -28,33 +35,38 @@ impl HeaderState {
 }
 
 impl HeaderState {
-    fn match_header_key(&mut self,
-                        header_key: &str,
-                        header_value: &str) -> Result<(), HeaderStateError> {
+    fn match_header_key(
+        &mut self,
+        header_key: &str,
+        header_value: &str,
+    ) -> Result<(), HeaderStateError> {
         match header_key {
             "Origin" => {
-                self.parameters.insert("origin".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("origin".to_string(), header_value.to_string());
             }
             "Label" => {
-                self.parameters.insert("label".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("label".to_string(), header_value.to_string());
             }
             "Suite" => {
-                self.parameters.insert("suite".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("suite".to_string(), header_value.to_string());
             }
             "Version" => {
-                self.parameters.insert("version".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("version".to_string(), header_value.to_string());
             }
             "Codename" => {
-                self.parameters.insert("codename".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("codename".to_string(), header_value.to_string());
             }
             "Date" => {
-                // TODO: Handle result
                 self.date = Option::Some(
-                    NaiveDateTime::parse_from_str(
-                        header_value,
-                        "%d %b %Y %H:%M:%S UTC")
-                        .map_err(
-                            |e| HeaderStateError::DateParsingError(header_key.to_string()))?);
+                    NaiveDateTime::parse_from_str(header_value, "%d %b %Y %H:%M:%S UTC").map_err(
+                        |e| HeaderStateError::DateParsingError(e, header_key.to_string()),
+                    )?,
+                );
             }
             "Architectures" => {
                 let architectures_iter = header_value
@@ -73,11 +85,12 @@ impl HeaderState {
                 self.components.extend(components_iter);
             }
             "Description" => {
-                self.parameters.insert("description".to_string(), header_value.to_string());
+                self.parameters
+                    .insert("description".to_string(), header_value.to_string());
             }
             _ => {
                 // No matching header found
-                return Result::Err(HeaderStateError::HeaderMatchingError(header_key.to_string()));
+                return Result::Err(HeaderStateError::UnknownHeaderKey(header_key.to_string()));
             }
         }
 
@@ -97,7 +110,7 @@ impl ParserState for HeaderState {
                 header_value = Option::Some(part.trim());
             } else {
                 // Unexpected split size
-                return Result::Err(HeaderStateError::UnexpectedHeaderSplitCount(line.to_string()));
+                return Result::Err(HeaderStateError::UnexpectedHeaderFormat(line.to_string()));
             }
         }
 
@@ -107,12 +120,10 @@ impl ParserState for HeaderState {
 
         if header_key.is_none() || header_value.is_none() {
             // Not all values were set
-            return Result::Err(());
+            return Result::Err(HeaderStateError::UnexpectedHeaderFormat(line.to_string()));
         }
 
-        self.match_header_key(
-            header_key.unwrap(),
-            header_value.unwrap())?;
+        self.match_header_key(header_key.unwrap(), header_value.unwrap())?;
 
         return Result::Ok(());
     }

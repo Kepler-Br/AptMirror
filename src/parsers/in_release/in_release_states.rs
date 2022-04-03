@@ -7,6 +7,10 @@ pub enum State {
     Signature,
 }
 
+pub enum InReleaseParseError {
+    Unexpected
+}
+
 pub trait ParserState {
     fn parse_line(&mut self, line: &str) -> Result<(), ()>;
 
